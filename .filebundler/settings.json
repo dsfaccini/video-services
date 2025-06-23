@@ -1,0 +1,10 @@
+{
+    "max_files": 500,
+    "sort_files_first": true,
+    "auto_bundle_settings": {
+        "auto_refresh_project_structure": true,
+        "auto_include_bundle_files": false,
+        "user_prompt": "Given the TODOs in the project, select the files that are relevant to the tasks."
+    },
+    "absolute_project_path": "/Users/david/projects/workers/video-services"
+}
