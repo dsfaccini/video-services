@@ -78,8 +78,7 @@ def clip_video(source_url: str, start_time: float, end_time: float) -> bytes:
     temp_output_path = tempfile.mktemp(suffix='.mp4')
     
     try:
-        # Use yt-dlp to download the video first, then we'll clip it
-        duration = end_time - start_time
+        # Use yt-dlp to download and clip the video in one step
         
         ydl_opts = {
             'quiet': True,

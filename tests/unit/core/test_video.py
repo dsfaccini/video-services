@@ -1,7 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
-import os
+from unittest.mock import patch, MagicMock
 
 from src.core.video import extract_video_url, clip_video
 

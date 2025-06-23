@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-def create_sample_video(output_path: str = "sample_video.mp4", duration: int = 5):
+def create_sample_video(output_path: str = "sample_video.mp4", duration: int = 5) -> bool:
     """Create a simple test video using ffmpeg."""
     try:
         # Create a 5-second video with a blue background

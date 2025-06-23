@@ -1,5 +1,7 @@
 import pytest
 import ffmpeg as typed_ffmpeg
+import tempfile
+import traceback
 
 from pathlib import Path
 from typing import Callable
@@ -13,13 +15,13 @@ from fastapi.testclient import TestClient
 class TestAPIIntegration:
     """Integration tests using real dependencies."""
     
-    def test_health_endpoint(self, client: TestClient):
+    def test_health_endpoint(self, client: TestClient) -> None:
         """Test health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
     
-    def test_root_endpoint(self, client: TestClient):
+    def test_root_endpoint(self, client: TestClient) -> None:
         """Test root endpoint returns API info."""
         response = client.get("/")
         assert response.status_code == 200
@@ -30,7 +32,7 @@ class TestAPIIntegration:
         assert data["endpoints"]["clip_video"] == "/api/video/clip"
     
     @pytest.mark.asyncio
-    async def test_extract_video_url_invalid_url(self, async_client: AsyncClient):
+    async def test_extract_video_url_invalid_url(self, async_client: AsyncClient) -> None:
         """Test extraction with invalid URL format."""
         response = await async_client.post(
             "/api/video/extract-url",
@@ -39,7 +41,7 @@ class TestAPIIntegration:
         assert response.status_code == 422  # Pydantic validation error
     
     @pytest.mark.asyncio
-    async def test_clip_video_invalid_times(self, async_client: AsyncClient):
+    async def test_clip_video_invalid_times(self, async_client: AsyncClient) -> None:
         """Test clipping with invalid time range."""
         response = await async_client.post(
             "/api/video/clip",
@@ -57,7 +59,7 @@ class TestAPIIntegration:
 class TestVideoProcessingIntegration:
     """Integration tests with real ffmpeg but controlled video sources."""
     
-    def test_clip_local_video_file(self, create_test_video: Callable[[str], str], temp_dir: Path):
+    def test_clip_local_video_file(self, create_test_video: Callable[[str], str], temp_dir: Path) -> None:
         """Test clipping a local video file using real ffmpeg."""
         # Create a test video
         test_video_path = create_test_video("test_input.mp4")
@@ -68,12 +70,20 @@ class TestVideoProcessingIntegration:
             (
                 typed_ffmpeg
                 .input('color=c=blue:s=320x240:d=5', f='lavfi')
-                .output(test_video_path, vcodec='libx264', pix_fmt='yuv420p')  # type: ignore[call-arg]
+                .output(test_video_path, vcodec='libx264', pix_fmt='yuv420p')  # type: ignore[arg-type,call-arg]
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True)
             )
         except Exception as e:
-            pytest.skip(f"FFmpeg not available or failed: {e}")
+            # Log error details to file instead of console
+            error_log = tempfile.mktemp(suffix='.log', prefix='ffmpeg_error_')
+            with open(error_log, 'w') as f:
+                f.write(f"FFmpeg error details:\n")
+                f.write(f"Exception: {str(e)}\n")
+                f.write(f"Exception type: {type(e)}\n")
+                traceback.print_exc(file=f)
+            print(f"FFmpeg error details written to: {error_log}")
+            pytest.skip(f"FFmpeg not available or failed: see {error_log}")
         
         # Now test clipping it
         from src.core.video import clip_video
@@ -85,7 +95,7 @@ class TestVideoProcessingIntegration:
             def __enter__(self):
                 return self
             
-            def __exit__(self, *args: str):
+            def __exit__(self, *args: str) -> None:
                 pass
             
             def download(self, urls: list[str]) -> None:
@@ -102,7 +112,8 @@ class TestVideoProcessingIntegration:
             result = clip_video(str(output_path), 1.0, 3.0)
             
             assert len(result) > 0
-            assert result[:4] == b'\x00\x00\x00'  # MP4 file signature
+            # Check for MP4 file signature (more tolerant check)
+            assert result[:3] == b'\x00\x00\x00', f"Invalid MP4 header: {result[:8].hex()}"
             
         finally:
             yt_dlp.YoutubeDL = original_ydl  # type: ignore[misc]
@@ -135,7 +146,7 @@ class TestAPIErrorHandling:
     """Test error handling with partial real dependencies."""
     
     @pytest.mark.asyncio
-    async def test_extract_video_url_unsupported_site(self, async_client: AsyncClient):
+    async def test_extract_video_url_unsupported_site(self, async_client: AsyncClient) -> None:
         """Test extraction from an unsupported site."""
         response = await async_client.post(
             "/api/video/extract-url",
@@ -145,7 +156,7 @@ class TestAPIErrorHandling:
         assert "Failed to extract video URL" in response.json()["detail"]
     
     @pytest.mark.asyncio
-    async def test_clip_video_nonexistent_url(self, async_client: AsyncClient):
+    async def test_clip_video_nonexistent_url(self, async_client: AsyncClient) -> None:
         """Test clipping with a non-existent video URL."""
         response = await async_client.post(
             "/api/video/clip",

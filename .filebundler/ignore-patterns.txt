@@ -1,3 +1,4 @@
+tests/fixtures/**/*.yaml
 *.egg-info
 venv/**
 venv

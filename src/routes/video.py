@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, HttpUrl
-from typing import Optional
 
 from ..core.video import extract_video_url, clip_video
 
@@ -59,7 +58,7 @@ async def clip_video_endpoint(request: ClipVideoRequest) -> Response:
             content=video_bytes,
             media_type="video/mp4",
             headers={
-                "Content-Disposition": f"attachment; filename=clipped_video.mp4"
+                "Content-Disposition": "attachment; filename=clipped_video.mp4"
             }
         )
     except ValueError as e:
