@@ -13,7 +13,7 @@ LINKEDIN_VIDEO_URLS: List[TEST_LINK_TYPE] = [
     {
         "url": "https://www.linkedin.com/feed/update/urn:li:activity:7335907657188360192/",
         "description": "LinkedIn post with video",
-        "expected_domain": "linkedin.com",
+        "expected_domain": "dms.licdn.com",
         "active": True
     }
 ]

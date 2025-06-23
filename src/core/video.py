@@ -3,7 +3,7 @@ from typing import Any, Dict
 import os
 import tempfile
 import yt_dlp
-import ffmpeg
+from yt_dlp.utils import download_range_func
 
 
 def extract_video_url(post_url: str) -> str:
@@ -54,12 +54,12 @@ def extract_video_url(post_url: str) -> str:
         raise ValueError(f"Failed to extract video URL: {str(e)}")
 
 
-def clip_video(video_url: str, start_time: float, end_time: float) -> bytes:
+def clip_video(source_url: str, start_time: float, end_time: float) -> bytes:
     """
-    Download and clip a video between specified timestamps.
+    Download and clip a video between specified timestamps using yt-dlp.
     
     Args:
-        video_url: Direct URL of the video to clip
+        source_url: Source URL (either social media post URL or direct video URL)
         start_time: Start time in seconds
         end_time: End time in seconds
         
@@ -74,39 +74,24 @@ def clip_video(video_url: str, start_time: float, end_time: float) -> bytes:
     if end_time <= start_time:
         raise ValueError("End time must be greater than start time")
     
-    # Create temporary files for input and output
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_input:
-        temp_input_path = temp_input.name
-    
-    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_output:
-        temp_output_path = temp_output.name
+    # Create temporary file for output  
+    temp_output_path = tempfile.mktemp(suffix='.mp4')
     
     try:
-        # Download video using yt-dlp
+        # Use yt-dlp to download the video first, then we'll clip it
+        duration = end_time - start_time
+        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'outtmpl': temp_input_path,
+            'outtmpl': temp_output_path,
             'format': 'best[ext=mp4]/best',
+            'download_ranges': download_range_func(None, [(start_time, end_time)]),
+            'force_keyframes_at_cuts': True,
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-        
-        # Clip video using typed-ffmpeg
-        duration = end_time - start_time
-        
-        (
-            ffmpeg
-            .input(temp_input_path, ss=start_time, t=duration)
-            .output(
-                temp_output_path,
-                codec='copy',  # Copy codecs for speed
-                avoid_negative_ts='make_zero'
-            )
-            .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
-        )
+            ydl.download([source_url])
         
         # Read the clipped video
         with open(temp_output_path, 'rb') as f:
@@ -119,6 +104,5 @@ def clip_video(video_url: str, start_time: float, end_time: float) -> bytes:
         
     finally:
         # Clean up temporary files
-        for path in [temp_input_path, temp_output_path]:
-            if os.path.exists(path):
-                os.unlink(path)
+        if os.path.exists(temp_output_path):
+            os.unlink(temp_output_path)

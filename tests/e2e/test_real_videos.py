@@ -53,7 +53,7 @@ class TestRealVideoExtraction:
             
             # Basic validations
             assert len(video_bytes) > 1000, "Video file seems too small"
-            assert video_bytes[:4] == b'\x00\x00\x00', "Not a valid MP4 file"
+            assert video_bytes[:3] == b'\x00\x00\x00', "Not a valid MP4 file"
             
             # Optionally save for manual inspection
             if os.getenv("SAVE_TEST_VIDEOS"):

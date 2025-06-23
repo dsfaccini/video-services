@@ -97,38 +97,27 @@ class TestClipVideo:
         mock_download = mock_ydl.return_value.__enter__.return_value.download
         mock_download.return_value = None
         
-        # Mock ffmpeg operations
-        mock_ffmpeg = mocker.patch('ffmpeg')
-        mock_input = Mock()
-        mock_output = Mock()
-        mock_output.overwrite_output.return_value = mock_output
-        mock_output.run.return_value = None
-        
-        mock_ffmpeg.input.return_value = mock_input
-        mock_input.output.return_value = mock_output
-        
         # Mock tempfile and file operations
         with patch('tempfile.NamedTemporaryFile') as mock_temp:
             # Setup temp files
-            temp_input = temp_dir / "input.mp4"
             temp_output = temp_dir / "output.mp4"
-            temp_input.write_bytes(b"input video")
             temp_output.write_bytes(b"clipped video content")
             
-            # Configure mocks
-            mock_temp.side_effect = [
-                MagicMock(name=str(temp_input)),
-                MagicMock(name=str(temp_output))
-            ]
+            # Configure mock temporary file to return actual path
+            mock_temp_output = MagicMock()
+            mock_temp_output.name = str(temp_output)
+            
+            mock_temp.return_value = mock_temp_output
             
             with patch('builtins.open', create=True) as mock_open:
                 mock_open.return_value.__enter__.return_value.read.return_value = b"clipped video content"
                 
-                result = clip_video("https://example.com/video.mp4", 10.0, 20.0)
+                # Mock os.path.exists to return False so cleanup doesn't fail
+                with patch('os.path.exists', return_value=False):
+                    result = clip_video("https://example.com/video.mp4", 10.0, 20.0)
         
         assert result == b"clipped video content"
         mock_download.assert_called_once()
-        mock_ffmpeg.input.assert_called_once()
         
     def test_clip_video_negative_start_time(self):
         """Test clipping with negative start time."""
@@ -145,48 +134,31 @@ class TestClipVideo:
         with pytest.raises(ValueError, match="End time must be greater than start time"):
             clip_video("https://example.com/video.mp4", 10.0, 10.0)
     
-    def test_clip_video_download_failure(self, mocker):
+    def test_clip_video_download_failure(self, mocker, temp_dir):
         """Test handling of download failures."""
         mock_ydl = mocker.patch('yt_dlp.YoutubeDL')
         mock_instance = mock_ydl.return_value.__enter__.return_value
         mock_instance.download.side_effect = Exception("Download failed")
         
-        with patch('tempfile.NamedTemporaryFile'):
-            with pytest.raises(ValueError, match="Failed to clip video: Download failed"):
-                clip_video("https://example.com/video.mp4", 0.0, 10.0)
-    
-    def test_clip_video_ffmpeg_failure(self, mocker, temp_dir):
-        """Test handling of ffmpeg failures."""
-        # Mock successful download
-        mock_ydl = mocker.patch('yt_dlp.YoutubeDL')
-        mock_ydl.return_value.__enter__.return_value.download.return_value = None
-        
-        # Mock ffmpeg to raise an exception
-        mock_ffmpeg = mocker.patch('ffmpeg')
-        mock_input = Mock()
-        mock_output = Mock()
-        mock_output.overwrite_output.return_value = mock_output
-        mock_output.run.side_effect = Exception("FFmpeg error")
-        
-        mock_ffmpeg.input.return_value = mock_input
-        mock_input.output.return_value = mock_output
-        
+        # Mock tempfile with proper cleanup
         with patch('tempfile.NamedTemporaryFile') as mock_temp:
-            temp_files = [
-                MagicMock(name=str(temp_dir / "input.mp4")),
-                MagicMock(name=str(temp_dir / "output.mp4"))
-            ]
-            mock_temp.side_effect = temp_files
+            temp_output = temp_dir / "output.mp4"
             
-            with pytest.raises(ValueError, match="Failed to clip video: FFmpeg error"):
-                clip_video("https://example.com/video.mp4", 0.0, 10.0)
+            mock_temp_output = MagicMock()
+            mock_temp_output.name = str(temp_output)
+            
+            mock_temp.return_value = mock_temp_output
+            
+            # Mock os.path.exists to return False so cleanup doesn't fail
+            with patch('os.path.exists', return_value=False):
+                with pytest.raises(ValueError, match="Failed to clip video: Download failed"):
+                    clip_video("https://example.com/video.mp4", 0.0, 10.0)
+    
     
     def test_clip_video_cleanup_on_error(self, mocker, temp_dir):
         """Test that temporary files are cleaned up on error."""
-        # Create actual temp files
-        temp_input = temp_dir / "input.mp4"
+        # Create actual temp file
         temp_output = temp_dir / "output.mp4"
-        temp_input.write_text("test")
         temp_output.write_text("test")
         
         # Mock to raise an exception
@@ -194,10 +166,7 @@ class TestClipVideo:
         mock_ydl.return_value.__enter__.return_value.download.side_effect = Exception("Error")
         
         with patch('tempfile.NamedTemporaryFile') as mock_temp:
-            mock_temp.side_effect = [
-                MagicMock(name=str(temp_input)),
-                MagicMock(name=str(temp_output))
-            ]
+            mock_temp.return_value = MagicMock(name=str(temp_output))
             
             # Mock os.path.exists and os.unlink to track cleanup
             with patch('os.path.exists') as mock_exists:
@@ -208,4 +177,4 @@ class TestClipVideo:
                         clip_video("https://example.com/video.mp4", 0.0, 10.0)
                     
                     # Verify cleanup was attempted
-                    assert mock_unlink.call_count == 2
+                    assert mock_unlink.call_count == 1
