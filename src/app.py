@@ -34,8 +34,8 @@ def create_app() -> FastAPI:
             "endpoints": {
                 "extract_video_url": "/api/video/extract-url",
                 "clip_video": "/api/video/clip",
-                "url_to_gif": "/api/video/url-to-gif",
-                "make_gif": "/api/video/make-gif",
+                "url_to_gif": "/api/video/to-gif/from-url",
+                "file_to_gif": "/api/video/to-gif/from-file",
             },
         }
 

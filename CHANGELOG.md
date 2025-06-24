@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2025-06-24
 
 ### Added
-- New GIF conversion endpoints (`/api/video/url-to-gif` and `/api/video/make-gif`)
+- New GIF conversion endpoints (`/api/video/url-to-gif` and `/api/video/to-gif/from-file`)
 - HTTPX client utility for convenient API interaction with authentication support
 - Comprehensive test suite for all endpoints including GIF functionality
 - Video file upload support for GIF conversion

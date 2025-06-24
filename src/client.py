@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# type: ignore
 """
 Video Services API Client
 
@@ -8,12 +9,11 @@ Can be used interactively in notebooks or as a standalone script.
 
 import httpx
 import json
-import tempfile
 from pathlib import Path
 from typing import Any, Optional, Literal, Union
 from urllib.parse import urljoin
 
-from config import Config
+from .config import Config
 
 default_config = Config.from_env()
 
@@ -56,7 +56,7 @@ class VideoServicesClient:
     def __enter__(self):
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb):  # type: ignore[no-untyped-def]
         self.client.close()
     
     def _url(self, endpoint: str) -> str:
@@ -186,7 +186,7 @@ class VideoServicesClient:
             httpx.HTTPStatusError: If the request fails
         """
         response = self.client.get(
-            self._url("/api/video/url-to-gif"),
+            self._url("/api/video/to-gif/from-url"),
             params={
                 "url": url,
                 "start_time": start_time,
@@ -244,16 +244,16 @@ class VideoServicesClient:
         
         with open(video_path, 'rb') as f:
             files = {"video": (video_path.name, f, "video/mp4")}
-            data = {
-                "resize": resize,
-                "speed": speed,
-                "fps": fps,
-                "quality": quality,  
-                "loop": loop
-            }
+            data = dict(
+                resize=resize,
+                speed=speed,
+                fps=fps,
+                quality=quality,  
+                loop=loop
+            )
             
             response = self.client.post(
-                self._url("/api/video/make-gif"),
+                self._url("/api/video/to-gif/from-file"),
                 files=files,
                 data=data
             )
@@ -274,13 +274,13 @@ class VideoServicesClient:
 # Convenience functions for quick usage
 def create_client(
     config: Optional[Config] = None,
-    **overrides
+    **overrides: Any
 ) -> VideoServicesClient:
     """Create a client instance with optional config overrides."""
     return VideoServicesClient(config=config, **overrides)
 
 
-def quick_extract(url: str, config: Optional[Config] = None, **overrides) -> str:
+def quick_extract(url: str, config: Optional[Config] = None, **overrides: Any) -> str:
     """Quick video URL extraction."""
     with create_client(config, **overrides) as client:
         return client.extract_video_url(url)
@@ -292,7 +292,7 @@ def quick_clip(
     end_time: float, 
     save_to: Optional[str] = None,
     config: Optional[Config] = None,
-    **overrides
+    **overrides: Any
 ) -> bytes:
     """Quick video clipping."""
     with create_client(config, **overrides) as client:
@@ -305,7 +305,7 @@ def quick_gif(
     end_time: float,
     save_to: Optional[str] = None,
     config: Optional[Config] = None,
-    **options
+    **options: Any
 ) -> bytes:
     """Quick GIF creation from URL."""
     # Separate config overrides from gif options

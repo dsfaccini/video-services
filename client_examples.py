@@ -4,8 +4,10 @@ Example usage of the Video Services API Client
 Copy these examples into your notebook or use them as reference.
 """
 
-from client import VideoServicesClient, quick_extract, quick_clip, quick_gif
-from config import Config, config
+from src.client import VideoServicesClient, quick_extract, quick_clip, quick_gif
+from src.config import Config
+
+default_config = Config()
 
 # Example URLs to test with
 EXAMPLE_URLS = {
@@ -104,33 +106,6 @@ def example_4_create_gif_from_url():
         except Exception as e:
             print(f"Error creating GIF: {e}")
 
-def example_5_create_gif_from_file():
-    """Create a GIF from a local video file."""
-    print("=== Example 5: Create GIF from File ===")
-    
-    # This assumes you have a local video file
-    video_file = "clipped_video.mp4"  # From previous example
-    
-    with VideoServicesClient() as client:
-        try:
-            gif_bytes = client.make_gif_from_file(
-                video_file=video_file,
-                resize="75%",
-                speed="1x",
-                fps=8,
-                quality=75,
-                loop="forever",
-                save_to="from_file.gif"
-            )
-            
-            print(f"GIF size: {len(gif_bytes)} bytes")
-            print("✓ GIF saved as 'from_file.gif'")
-            
-        except FileNotFoundError:
-            print(f"Video file '{video_file}' not found. Run example 3 first!")
-        except Exception as e:
-            print(f"Error creating GIF from file: {e}")
-
 def example_6_quick_functions():
     """Use the quick convenience functions."""
     print("=== Example 6: Quick Functions ===")
@@ -172,7 +147,6 @@ def run_all_examples():
         example_2_extract_video_url,
         example_3_clip_video,
         example_4_create_gif_from_url,
-        example_5_create_gif_from_file,
         example_6_quick_functions
     ]
     
@@ -187,9 +161,9 @@ def run_all_examples():
 if __name__ == "__main__":
     print("Video Services API Client Examples")
     print("=" * 40)
-    print(f"Base URL: {config.base_url}")
-    print(f"Auth: {'Enabled' if config.auth else 'Disabled'}")
-    print(f"Output Directory: {config.default_output_dir}")
+    print(f"Base URL: {default_config.base_url}")
+    print(f"Auth: {'Enabled' if default_config.auth else 'Disabled'}")
+    print(f"Output Directory: {default_config.default_output_dir}")
     print()
     
     # Run a simple test
