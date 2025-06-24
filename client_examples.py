@@ -5,10 +5,7 @@ Copy these examples into your notebook or use them as reference.
 """
 
 from client import VideoServicesClient, quick_extract, quick_clip, quick_gif
-
-# Configuration - update these for your setup
-BASE_URL = "http://localhost:8000"  # or "https://faccit.getalecs.com"
-AUTH = None  # or ("username", "password") for production
+from config import Config, config
 
 # Example URLs to test with
 EXAMPLE_URLS = {
@@ -21,7 +18,7 @@ def example_1_basic_usage():
     """Basic usage with the client."""
     print("=== Example 1: Basic Usage ===")
     
-    with VideoServicesClient(base_url=BASE_URL, auth=AUTH) as client:
+    with VideoServicesClient() as client:
         # Health check
         health = client.health_check()
         print(f"API Health: {health}")
@@ -36,7 +33,7 @@ def example_2_extract_video_url():
     
     test_url = EXAMPLE_URLS["twitter"]  # Change this to test different URLs
     
-    with VideoServicesClient(base_url=BASE_URL, auth=AUTH) as client:
+    with VideoServicesClient() as client:
         try:
             video_url = client.extract_video_url(test_url)
             print(f"Original URL: {test_url}")
@@ -60,7 +57,7 @@ def example_3_clip_video():
     # First extract a video URL
     test_url = EXAMPLE_URLS["twitter"]
     
-    with VideoServicesClient(base_url=BASE_URL, auth=AUTH) as client:
+    with VideoServicesClient() as client:
         try:
             # Extract video URL first
             video_url = client.extract_video_url(test_url)
@@ -86,7 +83,7 @@ def example_4_create_gif_from_url():
     
     test_url = EXAMPLE_URLS["twitter"]
     
-    with VideoServicesClient(base_url=BASE_URL, auth=AUTH) as client:
+    with VideoServicesClient() as client:
         try:
             # Create GIF with custom options
             gif_bytes = client.url_to_gif(
@@ -114,7 +111,7 @@ def example_5_create_gif_from_file():
     # This assumes you have a local video file
     video_file = "clipped_video.mp4"  # From previous example
     
-    with VideoServicesClient(base_url=BASE_URL, auth=AUTH) as client:
+    with VideoServicesClient() as client:
         try:
             gif_bytes = client.make_gif_from_file(
                 video_file=video_file,
@@ -142,7 +139,7 @@ def example_6_quick_functions():
     
     try:
         # Quick extract
-        video_url = quick_extract(test_url, base_url=BASE_URL, auth=AUTH)
+        video_url = quick_extract(test_url)
         print(f"Quick extracted: {video_url[:60]}...")
         
         # Quick clip (saves to file)
@@ -150,9 +147,7 @@ def example_6_quick_functions():
             url=video_url,
             start_time=0.0,
             end_time=2.0,
-            save_to="quick_clip.mp4",
-            base_url=BASE_URL,
-            auth=AUTH
+            save_to="quick_clip.mp4"
         )
         print("✓ Quick clip saved")
         
@@ -162,8 +157,6 @@ def example_6_quick_functions():
             start_time=0.0,
             end_time=2.0,
             save_to="quick.gif",
-            base_url=BASE_URL,
-            auth=AUTH,
             resize="50%",
             speed="2x"
         )
@@ -194,8 +187,9 @@ def run_all_examples():
 if __name__ == "__main__":
     print("Video Services API Client Examples")
     print("=" * 40)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Auth: {'Enabled' if AUTH else 'Disabled'}")
+    print(f"Base URL: {config.base_url}")
+    print(f"Auth: {'Enabled' if config.auth else 'Disabled'}")
+    print(f"Output Directory: {config.default_output_dir}")
     print()
     
     # Run a simple test

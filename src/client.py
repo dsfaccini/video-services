@@ -10,8 +10,12 @@ import httpx
 import json
 import tempfile
 from pathlib import Path
-from typing import Optional, Literal, Union
+from typing import Any, Optional, Literal, Union
 from urllib.parse import urljoin
+
+from config import Config
+
+default_config = Config.from_env()
 
 
 class VideoServicesClient:
@@ -19,22 +23,33 @@ class VideoServicesClient:
     
     def __init__(
         self, 
-        base_url: str = "http://localhost:8000",
+        config: Optional[Config] = None,
+        base_url: Optional[str] = None,
         auth: Optional[tuple[str, str]] = None,
-        timeout: float = 60.0
+        timeout: Optional[float] = None
     ):
         """
         Initialize the client.
         
         Args:
-            base_url: The base URL of the API (default: http://localhost:8000)
-            auth: Optional tuple of (username, password) for authentication
-            timeout: Request timeout in seconds
+            config: Configuration object (uses default config if None)
+            base_url: Override base URL from config
+            auth: Override auth from config
+            timeout: Override timeout from config
         """
-        self.base_url = base_url.rstrip('/')
+        # Use provided config or default
+        if config is None:
+            config = default_config
+        
+        # Allow parameter overrides
+        self.base_url = (base_url or config.base_url).rstrip('/')
+        self.auth = auth or config.auth
+        self.timeout = timeout or config.timeout
+        self.config = config
+        
         self.client = httpx.Client(
-            auth=auth,
-            timeout=timeout,
+            auth=self.auth,
+            timeout=self.timeout,
             follow_redirects=True
         )
     
@@ -48,13 +63,22 @@ class VideoServicesClient:
         """Build full URL for an endpoint."""
         return urljoin(self.base_url + '/', endpoint.lstrip('/'))
     
-    def health_check(self) -> dict:
+    def _resolve_output_path(self, path: Union[str, Path]) -> Path:
+        """Resolve output path, using default output directory if relative."""
+        path = Path(path)
+        if not path.is_absolute():
+            # If relative path, put it in the default output directory
+            output_dir = Path(self.config.default_output_dir)
+            path = output_dir / path
+        return path
+    
+    def health_check(self) -> Any:
         """Check if the API is healthy."""
         response = self.client.get(self._url("/health"))
         response.raise_for_status()
         return response.json()
     
-    def get_api_info(self) -> dict:
+    def get_api_info(self) -> Any:
         """Get API information and available endpoints."""
         response = self.client.get(self._url("/"))
         response.raise_for_status()
@@ -122,8 +146,10 @@ class VideoServicesClient:
         video_bytes = response.content
         
         if save_to:
-            Path(save_to).write_bytes(video_bytes)
-            print(f"Saved clipped video to: {save_to}")
+            save_path = self._resolve_output_path(save_to)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_bytes(video_bytes)
+            print(f"Saved clipped video to: {save_path}")
         
         return video_bytes
     
@@ -177,8 +203,10 @@ class VideoServicesClient:
         gif_bytes = response.content
         
         if save_to:
-            Path(save_to).write_bytes(gif_bytes)
-            print(f"Saved GIF to: {save_to}")
+            save_path = self._resolve_output_path(save_to)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_bytes(gif_bytes)
+            print(f"Saved GIF to: {save_path}")
         
         return gif_bytes
     
@@ -235,24 +263,26 @@ class VideoServicesClient:
         gif_bytes = response.content
         
         if save_to:
-            Path(save_to).write_bytes(gif_bytes)
-            print(f"Saved GIF to: {save_to}")
+            save_path = self._resolve_output_path(save_to)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_bytes(gif_bytes)
+            print(f"Saved GIF to: {save_path}")
         
         return gif_bytes
 
 
 # Convenience functions for quick usage
 def create_client(
-    base_url: str = "http://localhost:8000",
-    auth: Optional[tuple[str, str]] = None
+    config: Optional[Config] = None,
+    **overrides
 ) -> VideoServicesClient:
-    """Create a client instance."""
-    return VideoServicesClient(base_url=base_url, auth=auth)
+    """Create a client instance with optional config overrides."""
+    return VideoServicesClient(config=config, **overrides)
 
 
-def quick_extract(url: str, base_url: str = "http://localhost:8000", auth: Optional[tuple[str, str]] = None) -> str:
+def quick_extract(url: str, config: Optional[Config] = None, **overrides) -> str:
     """Quick video URL extraction."""
-    with create_client(base_url, auth) as client:
+    with create_client(config, **overrides) as client:
         return client.extract_video_url(url)
 
 
@@ -261,11 +291,11 @@ def quick_clip(
     start_time: float, 
     end_time: float, 
     save_to: Optional[str] = None,
-    base_url: str = "http://localhost:8000",
-    auth: Optional[tuple[str, str]] = None
+    config: Optional[Config] = None,
+    **overrides
 ) -> bytes:
     """Quick video clipping."""
-    with create_client(base_url, auth) as client:
+    with create_client(config, **overrides) as client:
         return client.clip_video(url, start_time, end_time, save_to)
 
 
@@ -274,13 +304,16 @@ def quick_gif(
     start_time: float,
     end_time: float,
     save_to: Optional[str] = None,
-    base_url: str = "http://localhost:8000", 
-    auth: Optional[tuple[str, str]] = None,
+    config: Optional[Config] = None,
     **options
 ) -> bytes:
     """Quick GIF creation from URL."""
-    with create_client(base_url, auth) as client:
-        return client.url_to_gif(url, start_time, end_time, save_to=save_to, **options)
+    # Separate config overrides from gif options
+    config_overrides = {k: v for k, v in options.items() if k in ['base_url', 'auth', 'timeout']}
+    gif_options = {k: v for k, v in options.items() if k not in config_overrides}
+    
+    with create_client(config, **config_overrides) as client:
+        return client.url_to_gif(url, start_time, end_time, save_to=save_to, **gif_options)
 
 
 # Example usage for interactive sessions
@@ -289,11 +322,13 @@ if __name__ == "__main__":
     print("Video Services API Client")
     print("=" * 30)
     
-    # For local development:
-    auth = None
-    base_url = "http://localhost:8000"
+    # Load configuration from .env file
+    print(f"Base URL: {default_config.base_url}")
+    print(f"Auth: {'Enabled' if default_config.auth else 'Disabled'}")
+    print(f"Output Directory: {default_config.default_output_dir}")
+    print()
     
-    with create_client(base_url=base_url, auth=auth) as client:
+    with create_client() as client:
         try:
             # Health check
             health = client.health_check()
@@ -309,7 +344,8 @@ if __name__ == "__main__":
             # print(f"Extracted URL: {video_url}")
             
             print("\nClient ready for use!")
+            print("Create a .env file from .env.example to configure authentication.")
             
         except Exception as e:
             print(f"Error: {e}")
-            print("Make sure your API server is running!")
+            print("Make sure your API server is running and .env is configured!")

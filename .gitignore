@@ -41,3 +41,11 @@ Thumbs.db
 *.temp
 temp/
 tmp/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Downloaded files
+downloads/
