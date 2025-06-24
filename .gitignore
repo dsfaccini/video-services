@@ -1,4 +1,5 @@
 *.mp4
+*.gif
 
 # Python-generated files
 __pycache__/
