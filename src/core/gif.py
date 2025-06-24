@@ -1,8 +1,10 @@
 # pyright: reportUnknownMemberType=warning, reportUnknownVariableType=warning, reportUnknownArgumentType=warning, reportAttributeAccessIssue=warning
 
-from typing import Literal, Any
+from typing import Literal, Tuple
 import os
 import tempfile
+import subprocess
+import json
 import imageio.v3 as iio
 import numpy as np
 from PIL import Image
@@ -60,165 +62,134 @@ def from_video(
         with open(temp_video_path, "wb") as f:
             f.write(video_bytes)
 
-        # Read video with imageio
-        reader = iio.imopen(temp_video_path, "r")
-        meta = reader.properties()
-        
-        # Debug: Log metadata information in development mode
-        if os.getenv("DEBUG"):
-            print(f"[DEBUG] Video metadata: shape={getattr(meta, 'shape', 'N/A')}, fps={getattr(meta, 'fps', 'N/A')}")
-            print(f"[DEBUG] Available metadata attributes: {dir(meta)}")
-
-        # Calculate output dimensions with validation
+        # Get video metadata using imageio v3 with extension hint
         try:
-            if not hasattr(meta, 'shape') or len(meta.shape) < 2:
-                raise ValueError("Unable to determine video dimensions")
+            meta = iio.immeta(temp_video_path, extension=".mp4")
+            if os.getenv("DEBUG"):
+                print(f"[DEBUG] Video metadata from iio.immeta: {meta}")
+        except Exception as meta_error:
+            if os.getenv("DEBUG"):
+                print(f"[DEBUG] Failed to get metadata with iio.immeta: {meta_error}")
+            # Try ffprobe fallback immediately if imageio fails
+            try:
+                original_width, original_height, video_fps = _get_video_metadata_ffprobe(temp_video_path)
+                meta = {"shape": [original_height, original_width], "fps": video_fps}
+            except:
+                raise ValueError(f"Unable to read video metadata: {meta_error}")
+
+        # Extract dimensions and fps from metadata
+        original_width = None
+        original_height = None
+        video_fps = 30.0  # default fallback
+        
+        if 'shape' in meta and len(meta['shape']) >= 2:
+            original_height, original_width = meta['shape'][:2]
+        elif 'size' in meta and len(meta['size']) >= 2:
+            original_width, original_height = meta['size'][:2]
+        
+        if 'fps' in meta:
+            video_fps = meta['fps']
+        elif 'framerate' in meta:
+            video_fps = meta['framerate']
+        
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] Extracted dimensions: {original_width}x{original_height}, fps: {video_fps}")
+
+        # Check for invalid dimensions
+        if original_width is None or original_height is None:
+            # Use ffprobe fallback for metadata
+            if os.getenv("DEBUG"):
+                print("[DEBUG] Dimensions not found in metadata, using ffprobe fallback")
+            original_width, original_height, video_fps = _get_video_metadata_ffprobe(temp_video_path)
             
-            original_width = meta.shape[1]
-            original_height = meta.shape[0]
+        # Validate dimensions
+        if not (isinstance(original_width, (int, float)) and isinstance(original_height, (int, float))):
+            raise ValueError(f"Invalid dimension types: width={type(original_width)}, height={type(original_height)}")
             
-            # Check for infinity in original dimensions
-            if not (isinstance(original_width, (int, float)) and isinstance(original_height, (int, float))):
-                raise ValueError(f"Invalid dimension types: width={type(original_width)}, height={type(original_height)}")
+        if original_width == float('inf') or original_height == float('inf') or original_width <= 0 or original_height <= 0:
+            if os.getenv("DEBUG"):
+                print(f"[DEBUG] Invalid dimensions detected: {original_width}x{original_height}, using ffprobe fallback")
+            original_width, original_height, video_fps = _get_video_metadata_ffprobe(temp_video_path)
             
-            if original_width == float('inf') or original_height == float('inf'):
-                # Fallback: Try to get dimensions from first frame
-                if os.getenv("DEBUG"):
-                    print("[DEBUG] Metadata contains infinite dimensions, trying to get dimensions from first frame")
-                try:
-                    # Try different methods to get the first frame
-                    first_frame = None
-                    
-                    # Method 1: Try to read first frame directly
-                    if hasattr(reader, 'read'):
-                        try:
-                            first_frame = reader.read()
-                        except:
-                            pass
-                    
-                    # Method 2: Try using get_data if available
-                    if first_frame is None and hasattr(reader, 'get_data'):
-                        try:
-                            first_frame = reader.get_data(0)
-                        except:
-                            pass
-                    
-                    # Method 3: Try reopening as a different reader type
-                    if first_frame is None:
-                        try:
-                            temp_reader = iio.imread(temp_video_path, index=0)
-                            if hasattr(temp_reader, 'shape'):
-                                first_frame = temp_reader
-                        except:
-                            pass
-                    
-                    if first_frame is not None and hasattr(first_frame, 'shape') and len(first_frame.shape) >= 2:
-                        original_height, original_width = first_frame.shape[:2]
-                        if os.getenv("DEBUG"):
-                            print(f"[DEBUG] Got dimensions from first frame: {original_width}x{original_height}")
-                        
-                        if original_width == float('inf') or original_height == float('inf'):
-                            raise ValueError(f"First frame also contains infinite dimensions: {original_width}x{original_height}")
-                    else:
-                        raise ValueError("Could not get dimensions from first frame using any method")
-                        
-                except Exception as frame_error:
-                    raise ValueError(f"Video metadata contains infinite dimensions and fallback failed: {original_width}x{original_height}, frame error: {frame_error}")
-                    
-                # Reset reader position after reading first frame
-                reader.close()
-                reader = iio.imopen(temp_video_path, "r")
+        # Calculate new dimensions
+        new_width = original_width * resize_factor
+        new_height = original_height * resize_factor
+        
+        # Check for overflow/infinity before converting to int
+        if not (0 < new_width < float('inf')) or not (0 < new_height < float('inf')):
+            raise ValueError(f"Invalid resize calculation: {new_width}x{new_height}")
+        
+        width = int(new_width)
+        height = int(new_height)
+        
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Calculated dimensions too small: {width}x{height}")
             
-            if original_width <= 0 or original_height <= 0:
-                raise ValueError(f"Invalid video dimensions: {original_width}x{original_height}")
-            
-            # Calculate new dimensions
-            new_width = original_width * resize_factor
-            new_height = original_height * resize_factor
-            
-            # Check for overflow/infinity before converting to int
-            if not (0 < new_width < float('inf')) or not (0 < new_height < float('inf')):
-                raise ValueError(f"Invalid resize calculation: {new_width}x{new_height}")
-            
-            width = int(new_width)
-            height = int(new_height)
-            
-            if width <= 0 or height <= 0:
-                raise ValueError(f"Calculated dimensions too small: {width}x{height}")
-                
-        except (AttributeError, IndexError, TypeError) as e:
-            raise ValueError(f"Unable to determine video dimensions: {str(e)}")
-        except OverflowError as e:
-            raise ValueError(f"Video dimensions too large for processing: {str(e)}")
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] Final dimensions: {width}x{height}, video_fps: {video_fps}")
 
         # Calculate frame sampling based on speed  
-        video_fps = getattr(meta, 'fps', 30.0)
         frame_step = int((video_fps / fps) * speed_factor)
         if frame_step < 1:
             frame_step = 1
+            
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] Frame step: {frame_step}")
 
-        # Read and process frames
+        # Read and process frames using imageio v3 imiter
         frames = []
-        frame: Any
-        
-        # Try different methods to iterate through frames
         frame_index = 0
-        while True:
-            try:
-                # Try to get frame by index
-                if hasattr(reader, 'get_data'):
-                    frame = reader.get_data(frame_index)
-                elif hasattr(reader, 'read'):
-                    frame = reader.read()
-                    if frame is None:
-                        break
-                else:
-                    # Try using imageio imread with index
-                    frame = iio.imread(temp_video_path, index=frame_index)
-                
-                i = frame_index
-                
-            except (IndexError, StopIteration, Exception):
-                # No more frames available
-                break
-                
-            if i % frame_step == 0:
-                # Resize frame if needed
-                if resize_factor != 1.0:
-                    # Simple resize using numpy slicing
-                    resized = frame[
-                        :: int(1 / resize_factor), :: int(1 / resize_factor)
-                    ]
-                    # Ensure dimensions match expected size
-                    if resized.shape[0] != height or resized.shape[1] != width:
-                        # Use more precise resizing
+        
+        if os.getenv("DEBUG"):
+            print("[DEBUG] Starting frame iteration with iio.imiter")
+        
+        try:
+            for frame in iio.imiter(temp_video_path, extension=".mp4"):
+                if frame_index % frame_step == 0:
+                    # Resize frame if needed
+                    if resize_factor != 1.0:
+                        # Use PIL for precise resizing
                         img = Image.fromarray(frame)
                         img = img.resize((width, height), Image.Resampling.LANCZOS)
                         resized = np.array(img)
-                    frames.append(resized)
-                else:
-                    frames.append(frame)
+                        frames.append(resized)
+                    else:
+                        frames.append(frame)
+                
+                frame_index += 1
+                
+                # Safety limit to prevent processing too many frames
+                if frame_index > 1000:  # Max 1000 frames
+                    if os.getenv("DEBUG"):
+                        print("[DEBUG] Reached frame limit of 1000")
+                    break
+                    
+        except Exception as frame_error:
+            if os.getenv("DEBUG"):
+                print(f"[DEBUG] Error during frame iteration: {frame_error}")
+            raise ValueError(f"Failed to process video frames: {frame_error}")
+        
+        if not frames:
+            raise ValueError("No frames could be extracted from the video")
             
-            frame_index += 1
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] Processed {len(frames)} frames")
+
+        # Write GIF using imageio v3
+        if os.getenv("DEBUG"):
+            print("[DEBUG] Writing GIF")
             
-            # Safety limit to prevent infinite loops
-            if frame_index > 1000:  # Max 1000 frames
-                break
-
-        reader.close()
-
-        # Write GIF
-        writer = iio.imopen(temp_gif_path, "w", extension=".gif")
-
         # Calculate duration per frame in milliseconds
         duration_ms = int(1000 / fps)
 
         # Write frames to GIF
+        writer = iio.imopen(temp_gif_path, "w", extension=".gif")
+        
         for frame in frames:
             writer.write(
                 frame,
                 duration=duration_ms,  # type: ignore[call-arg]
-                loop=loop_count if loop_count >= 0 else None,
+                loop=loop_count if loop_count >= 0 else None,  # type: ignore[call-arg]
             )
 
         writer.close()
@@ -226,6 +197,9 @@ def from_video(
         # Read GIF bytes
         with open(temp_gif_path, "rb") as f:
             gif_bytes = f.read()
+            
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] Generated GIF with {len(gif_bytes)} bytes")
 
         return gif_bytes
 
@@ -237,3 +211,77 @@ def from_video(
         for path in [temp_video_path, temp_gif_path]:
             if os.path.exists(path):
                 os.unlink(path)
+
+
+def _get_video_metadata_ffprobe(video_path: str) -> Tuple[int, int, float]:
+    """
+    Get video metadata using ffprobe as fallback when imageio fails.
+    
+    Args:
+        video_path: Path to the video file
+        
+    Returns:
+        Tuple of (width, height, fps)
+        
+    Raises:
+        ValueError: If ffprobe fails or returns invalid data
+    """
+    try:
+        if os.getenv("DEBUG"):
+            print("[DEBUG] Using ffprobe to get video metadata")
+            
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,r_frame_rate',
+            '-of', 'json',
+            video_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode != 0:
+            raise ValueError(f"ffprobe failed with error: {result.stderr}")
+            
+        metadata = json.loads(result.stdout)
+        
+        if not metadata.get('streams'):
+            raise ValueError("No video streams found by ffprobe")
+            
+        stream = metadata['streams'][0]
+        width = stream.get('width')
+        height = stream.get('height')
+        
+        # Parse frame rate (might be in format like "30/1")
+        fps = 30.0  # default
+        if 'r_frame_rate' in stream:
+            rate_str = stream['r_frame_rate']
+            if '/' in rate_str:
+                num, den = rate_str.split('/')
+                if int(den) != 0:
+                    fps = float(num) / float(den)
+            else:
+                fps = float(rate_str)
+                
+        if not width or not height:
+            raise ValueError(f"Invalid dimensions from ffprobe: {width}x{height}")
+            
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Invalid dimensions from ffprobe: {width}x{height}")
+            
+        if os.getenv("DEBUG"):
+            print(f"[DEBUG] ffprobe metadata: {width}x{height} @ {fps}fps")
+            
+        return int(width), int(height), fps
+        
+    except subprocess.TimeoutExpired:
+        raise ValueError("ffprobe command timed out")
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        raise ValueError(f"Failed to parse ffprobe output: {e}")
+    except FileNotFoundError as e:
+        if "ffprobe" in str(e):
+            raise ValueError("ffprobe not found. Please install ffmpeg.")
+        else:
+            # File not found - probably in tests
+            raise ValueError(f"Video file not found: {video_path}")
