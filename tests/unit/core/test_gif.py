@@ -13,13 +13,12 @@ class TestGifFromVideo:
 
     def test_from_video_success_basic(self, mocker):
         """Test successful GIF conversion with default parameters."""
-        # Mock imageio components
-        mock_reader = MagicMock()
-        mock_writer = MagicMock()
-        mock_properties = MagicMock()
-        mock_properties.shape = [480, 720, 3]  # height, width, channels
-        mock_properties.get.return_value = 30.0  # fps
-        mock_reader.properties.return_value = mock_properties
+        # Mock imageio v3 metadata
+        mock_metadata = {
+            'shape': [480, 720, 3],  # height, width, channels
+            'fps': 30.0
+        }
+        mocker.patch("src.core.gif.iio.immeta", return_value=mock_metadata)
         
         # Mock frames (simulate 3 frames)
         mock_frames = [
@@ -27,11 +26,14 @@ class TestGifFromVideo:
             np.random.randint(0, 255, (480, 720, 3), dtype=np.uint8),
             np.random.randint(0, 255, (480, 720, 3), dtype=np.uint8),
         ]
-        mock_reader.__iter__ = MagicMock(return_value=iter(mock_frames))
         
-        # Mock imageio.v3.imopen
+        # Mock imageio v3 imiter
+        mocker.patch("src.core.gif.iio.imiter", return_value=iter(mock_frames))
+        
+        # Mock imageio v3 imopen for writer
+        mock_writer = MagicMock()
         mock_imopen = mocker.patch("src.core.gif.iio.imopen")
-        mock_imopen.side_effect = [mock_reader, mock_writer]
+        mock_imopen.return_value = mock_writer
         
         # Mock file operations
         mock_builtin_open = mocker.patch("builtins.open", mock_open())
