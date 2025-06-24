@@ -10,9 +10,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Video Services API",
         description="API for video processing atomic actions",
-        version="0.1.0"
+        version="0.1.0",
     )
-    
+
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
@@ -21,10 +21,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Include routers
     app.include_router(video.router)
-    
+
     # Root endpoint
     @app.get("/")
     async def root() -> Dict[str, Any]:
@@ -33,14 +33,16 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "endpoints": {
                 "extract_video_url": "/api/video/extract-url",
-                "clip_video": "/api/video/clip"
-            }
+                "clip_video": "/api/video/clip",
+                "url_to_gif": "/api/video/url-to-gif",
+                "make_gif": "/api/video/make-gif",
+            },
         }
-    
+
     @app.get("/health")
     async def health_check() -> Dict[str, str]:
         return {"status": "healthy"}
-    
+
     return app
 
 
