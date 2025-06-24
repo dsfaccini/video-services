@@ -6,6 +6,8 @@ dist/
 wheels/
 *.egg-info
 
+sandbox.ipynb
+
 # Virtual environments
 .venv
 venv/

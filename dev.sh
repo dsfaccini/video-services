@@ -123,6 +123,8 @@ function serve() {
 
 # Build Docker image
 function docker_build() {
+    print_header "Compiling requirements"
+    uv pip compile pyproject.toml -o requirements.txt
     print_header "Building Docker image"
     docker build -t video-services .
     print_success "Docker image built"

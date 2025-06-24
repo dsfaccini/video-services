@@ -1,3 +1,8 @@
+# General project information
+
+- this project uses uv as a package manager. 
+- to add a new package, run `uv add <package_name>`.
+
 # Claude Development Quality Assurance
 
 This document establishes quality gates and workflows for Claude development sessions to ensure code quality, proper testing, and organized commits.
